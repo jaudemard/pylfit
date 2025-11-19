@@ -129,6 +129,7 @@ class DMVLP(Model):
         verbose = 0
         heuristics = None
         threads = 1
+        prior = None
 
         if options is not None:
             if "targets_to_learn" in options:
@@ -139,6 +140,8 @@ class DMVLP(Model):
                 heuristics = options["heuristics"]
             if "threads" in options:
                 threads = options["threads"]
+            if "prior" in options:
+                prior = options["prior"]
             
         # Check parameters
         if not any(isinstance(dataset, i) for i in self._COMPATIBLE_DATASETS):
