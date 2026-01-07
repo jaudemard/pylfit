@@ -115,7 +115,7 @@ class PKN():
                 # Get nested OR
                 if child_node.getType() == libsbml.AST_LOGICAL_OR:
                     branches = self._extract_or_branches(child_node)
-                    print("OR BRANCHES:", branches)
+
                 # else get the condition
                 else:
                     cond = self._parse_condition(node.getChild(i))
@@ -238,7 +238,6 @@ class PKN():
                         target.domain,
                         function_term.getResultLevel(),
                         None)
-                print("Target: ", target_id, ", level: ", function_term.getResultLevel())
 
                 math_expression = function_term.getMath()
 
@@ -258,21 +257,14 @@ class PKN():
                         rules_bodies.extend(item)
                     else:
                         rules_bodies.append(item)
-
-                
-                print(transition.getId())
-                print(rules_bodies)
                 
                 # For each conditions, parse to ensure lfit compliance
                 for conditions_set in rules_bodies:
-
-                    print("###New condition set")
 
                     variants = []
                     simple_condition = []
 
                     for cond in conditions_set:
-                        print("Conditions", cond)
                         atoms_in_cond = self._condition_to_lfit_body(cond)
                         # There's multiple values allowed for the rule
                         if len(atoms_in_cond) > 1:
@@ -297,8 +289,8 @@ class PKN():
                                 else:
                                     body[el.variable] = el
                             rules.append(pylfit.objects.Rule(head,body))
-        for rule in rules:
-            print(rule)
+        
+        return rules
                         
 
     def _map_to_dataset(self, dataset):
@@ -314,5 +306,7 @@ if __name__ == "__main__":
     
 
     model = PKN(sbml_file)
+
+    print(model.rules)
 
     # print(model.rules)
