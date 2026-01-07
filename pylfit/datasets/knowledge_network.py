@@ -248,9 +248,13 @@ class PKN():
                 # Extract OR branches where each branch is a list of AND conditions
                 branches = self._extract_or_branches(math_expression)
 
+                # Flatten branches from nested OR extraction
                 rules_bodies = []
                 for item in branches:
                     if item and isinstance(item[0], list):
+                        # Nested OR in nested OR is not implemented, and untested
+                        if not isinstance(item[0][0], dict):
+                            raise NotImplementedError(f"This type of nested OR isn't handled, in transition {transition.getId()}.")
                         rules_bodies.extend(item)
                     else:
                         rules_bodies.append(item)
