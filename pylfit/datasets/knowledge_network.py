@@ -1,11 +1,14 @@
-"""Module for handling prior knowledge networks."""
+"""Module for handling prior knowledge networks.
+
+Still in development and testing.
+"""
 
 import libsbml
 import os
 import collections
 import pylfit
+import itertools
 from typing import Dict, List, Any
-#from ..objects import LegacyAtom
 
 class PKN():
     def __init__(self, sbml_path, dataset=None):
@@ -24,6 +27,10 @@ class PKN():
         if self.qual_model is None:
             raise ValueError("Model has no SBML-Qual content.")
         
+        if dataset:
+            self.dataset = dataset
+            self._dataset_features_names = [feature[0] for feature in self.dataset.features]
+        
         self.features = self._extract_features()
         self.rules = self._extract_rules()
 
@@ -35,135 +42,170 @@ class PKN():
         """
         Extract features and their domain. Return a dict of Id and the corresponding Void Atom
 
-        :param dataset: 
+        :param dataset: A pylfit.dataset.Dataset 
         """
         features = {}
         
         for species in self.qual_model.getListOfQualitativeSpecies():
+            if dataset:
+                if species.getId() not in self._dataset_features_names:
+                    continue
+                else:
+                    # state_position = 
+                    raise NotImplementedError("Retrieving features is not implemented yet.")
+            else:
+                state_position = None
+
+
             domain = set([str(i) for i in range(0,species.getMaxLevel()+1)])
             # Create void atoms for each feature
-            features[species.getId()] = pylfit.objects.LegacyAtom(species.getId(), domain, pylfit.objects.LegacyAtom._VOID_VALUE, None)
+            features[species.getId()] = pylfit.objects.LegacyAtom(species.getId(),
+                                        domain,
+                                        pylfit.objects.LegacyAtom._VOID_VALUE,
+                                        state_position)
         
         return features
 
 
-    def _handle_or(self, Dict):
+    def _parse_condition(self, node):
         """
-        Create two rule if a OR is in the logical expression.
+        Parse a single condition node (comparison operation).
+        Returns dict with variable, operator, and value.
         """
-        return NotImplementedError("yet to be done")
-    
-
-    def _ast_dict_to_legacy(self, Dict):
-        """
-        Transform the dict from parsed AST into lefacy rules.
-        """
-        return NotImplementedError("yet to be done")
-
-    
-    def _parse_ast_node(self, node):
-        """
-        Recursively parse libSBML ASTNode and convert to dictionary structure.
-        
-        :param node: libSBML ASTNode object
-        :return: Dictionary representing the logical expression
-        """
-        if node is None:
-            return None
-        
         node_type = node.getType()
         
-        # Handle variable names (ci elements)
-        if node_type == libsbml.AST_NAME:
-            return {
-                'type': 'variable',
-                'value': node.getName()
-            }
+        # Map libSBML node types to operator strings
+        op_map = {
+            libsbml.AST_RELATIONAL_EQ: 'eq',
+            libsbml.AST_RELATIONAL_NEQ: 'neq',
+            libsbml.AST_RELATIONAL_GEQ: 'geq',
+            libsbml.AST_RELATIONAL_GT: 'gt',
+            libsbml.AST_RELATIONAL_LEQ: 'leq',
+            libsbml.AST_RELATIONAL_LT: 'lt',
+        }
         
-        # Handle integer constants (cn elements)
-        elif node_type == libsbml.AST_INTEGER:
-            return {
-                'type': 'constant',
-                'value': node.getInteger()
-            }
+        if node_type in op_map:
+            left = node.getChild(0)
+            right = node.getChild(1)
+            
+            # Assume left is variable, right is constant
+            if left.isName() and right.isInteger():
+                return {
+                    'variable': left.getName(),
+                    'operator': op_map[node_type],
+                    'value': right.getInteger()
+                }
         
-        # Handle real constants (shouldn't be seen in sbml-qual but who knows)
-        elif node_type == libsbml.AST_REAL:
-            return {
-                'type': 'constant',
-                'value': int(node.getReal())
-            }
-        
-        # Handle relational operators
-        elif node_type == libsbml.AST_LOGICAL_AND:
-            operands = [self._parse_ast_node(node.getChild(i)) for i in range(node.getNumChildren())]
-            return {'op': 'and', 'operands': operands}
-        
-        elif node_type == libsbml.AST_LOGICAL_OR:
-            operands = [self._parse_ast_node(node.getChild(i)) for i in range(node.getNumChildren())]
-            return {'op': 'or', 'operands': operands}
-        
-        elif node_type == libsbml.AST_LOGICAL_NOT:
-            return {'op': 'not', 'operands': [self._parse_ast_node(node.getChild(0))]}
-        
-        elif node_type == libsbml.AST_RELATIONAL_EQ:
-            return {
-                'op': 'eq',
-                'operands': [
-                    self._parse_ast_node(node.getChild(0)),
-                    self._parse_ast_node(node.getChild(1))
-                ]
-            }
-        
-        elif node_type == libsbml.AST_RELATIONAL_NEQ:
-            return {
-                'op': 'neq',
-                'operands': [
-                    self._parse_ast_node(node.getChild(0)),
-                    self._parse_ast_node(node.getChild(1))
-                ]
-            }
-        
-        elif node_type == libsbml.AST_RELATIONAL_GEQ:
-            return {
-                'op': 'geq',
-                'operands': [
-                    self._parse_ast_node(node.getChild(0)),
-                    self._parse_ast_node(node.getChild(1))
-                ]
-            }
-        
-        elif node_type == libsbml.AST_RELATIONAL_GT:
-            return {
-                'op': 'gt',
-                'operands': [
-                    self._parse_ast_node(node.getChild(0)),
-                    self._parse_ast_node(node.getChild(1))
-                ]
-            }
-        
-        elif node_type == libsbml.AST_RELATIONAL_LEQ:
-            return {
-                'op': 'leq',
-                'operands': [
-                    self._parse_ast_node(node.getChild(0)),
-                    self._parse_ast_node(node.getChild(1))
-                ]
-            }
-        
-        elif node_type == libsbml.AST_RELATIONAL_LT:
-            return {
-                'op': 'lt',
-                'operands': [
-                    self._parse_ast_node(node.getChild(0)),
-                    self._parse_ast_node(node.getChild(1))
-                ]
-            }
-        
-        else:
-            # Fallback for unsupported node types
-            return {'type': 'unknown', 'value': str(node)}
+            # If it's different
+            raise NotImplementedError(f"Not implemented for,\n",
+                                        f"left: {type(left)}\n",
+                                        f"right: {type(right)}\n")
     
+
+    def _extract_and_conditions(self, node):
+        """
+        Extract all conditions from an AND node.
+        Returns list of condition dicts.
+        """
+        branches = None
+        if node.getType() == libsbml.AST_LOGICAL_AND:
+            conditions = []
+            for i in range(node.getNumChildren()):
+                child_node = node.getChild(i)
+                # Get nested OR
+                if child_node.getType() == libsbml.AST_LOGICAL_OR:
+                    branches = self._extract_or_branches(child_node)
+                    print("OR BRANCHES:", branches)
+                # else get the condition
+                else:
+                    cond = self._parse_condition(node.getChild(i))
+                    if cond:
+                        conditions.append(cond)
+
+            # Flatten OR branches as multiple 'AND-only' conditions
+            if branches is not None:
+                all_conditions = []
+                for or_branch in branches:
+                    all_conditions += [or_branch + conditions]
+                return all_conditions
+            else:
+                return conditions
+        
+        # Single condition (no AND)
+        else:
+            cond = self._parse_condition(node)
+            return [cond] if cond else []
+    
+
+    def _extract_or_branches(self, node):
+        """
+        Extract all OR branches from a math expression.
+        Returns a list of conditions, with only AND relationship.
+        """
+        if node.getType() == libsbml.AST_LOGICAL_OR:
+            branches = []
+            # Extract the different conditions in OR
+            for i in range(node.getNumChildren()):
+                child = node.getChild(i)
+                if child.getType() == libsbml.AST_LOGICAL_OR:
+                    return NotImplementedError("Found a OR nested in a OR.",
+                    "It can't be handled here, and is considered a bad practice.")
+                conditions = self._extract_and_conditions(child)
+                if conditions:
+                    branches.append(conditions)
+            return branches
+        
+        # No OR
+        else:
+            conditions = self._extract_and_conditions(node)
+            if conditions:
+                return [conditions]
+            else:
+                return []
+    
+
+    def _condition_to_lfit_body(self, condition):
+        """
+        Convert a single condition to list of possible atoms.
+        For non-equality operators, returns multiple atoms (one per valid value).
+
+        :param condition: A dict with structure, {"variable": .. , "operator": .. , "value": .. }
+        """
+        var_name = condition['variable']
+        operator = condition['operator']
+        value = condition['value']
+        
+        if var_name not in self.features:
+            return []
+        
+        feature = self.features[var_name]
+        domain_values = sorted([int(v) for v in feature.domain])
+        
+        # Determine valid values based on operator
+        if operator == 'eq':
+            valid_values = [value]
+        elif operator == 'neq':
+            valid_values = [v for v in domain_values if v != value]
+        elif operator == 'geq':
+            valid_values = [v for v in domain_values if v >= value]
+        elif operator == 'gt':
+            valid_values = [v for v in domain_values if v > value]
+        elif operator == 'leq':
+            valid_values = [v for v in domain_values if v <= value]
+        elif operator == 'lt':
+            valid_values = [v for v in domain_values if v < value]
+        else:
+            return []
+        
+        # Create an atom for each valid value
+        atoms = []
+        for val in valid_values:
+            atom = pylfit.objects.LegacyAtom(var_name, feature.domain, str(val), None)
+            atoms.append(atom)
+        
+        return atoms
+
+
 
     def _extract_rules(self, dataset_feature=None):
         """
@@ -179,7 +221,7 @@ class PKN():
         """
         rules = []
         for transition in self.qual_model.getListOfTransitions():
-            
+
             # Get the target variable, or head, of the rules
             list_of_targets = [output for output in transition.getListOfOutputs()]
             target_id = list_of_targets[0].getQualitativeSpecies()
@@ -193,18 +235,67 @@ class PKN():
             for function_term in transition.getListOfFunctionTerms():
                 # Get the head of the rules
                 head = pylfit.objects.LegacyAtom(target_id,
-                target.domain, function_term.getResultLevel(), None)
+                        target.domain,
+                        function_term.getResultLevel(),
+                        None)
+                print("Target: ", target_id, ", level: ", function_term.getResultLevel())
 
                 math_expression = function_term.getMath()
 
                 if math_expression is None:
                     continue
                 
-                # Parse the AST node into a manageable dict
-                parsed_expr = self._parse_ast_node(math_expression)
+                # Extract OR branches where each branch is a list of AND conditions
+                branches = self._extract_or_branches(math_expression)
 
-        return parsed_expr
+                rules_bodies = []
+                for item in branches:
+                    if item and isinstance(item[0], list):
+                        rules_bodies.extend(item)
+                    else:
+                        rules_bodies.append(item)
 
+                
+                print(transition.getId())
+                print(rules_bodies)
+                
+                # For each conditions, parse to ensure lfit compliance
+                for conditions_set in rules_bodies:
+
+                    print("###New condition set")
+
+                    variants = []
+                    simple_condition = []
+
+                    for cond in conditions_set:
+                        print("Conditions", cond)
+                        atoms_in_cond = self._condition_to_lfit_body(cond)
+                        # There's multiple values allowed for the rule
+                        if len(atoms_in_cond) > 1:
+                            variants.append(atoms_in_cond)
+                        # There's one single value of the atom for this rule
+                        else:
+                            simple_condition += atoms_in_cond
+                    
+                    # Create a simple rule if it already respect lfit 
+                    if len(variants) == 0:
+                        body = {atom.variable: atom for atom in simple_condition}
+                        rules.append(pylfit.objects.Rule(head, body))
+                    
+                    # Create a cartesian product of the variant if it doesn't
+                    else:
+                        body_conditions = [[simple_condition]] + variants
+                        for rule_variant in itertools.product(*body_conditions):
+                            body = {}
+                            for el in rule_variant:
+                                if isinstance(el, list):
+                                    body = body | {atom.variable:atom for atom in el}
+                                else:
+                                    body[el.variable] = el
+                            rules.append(pylfit.objects.Rule(head,body))
+        for rule in rules:
+            print(rule)
+                        
 
     def _map_to_dataset(self, dataset):
         """
@@ -214,8 +305,10 @@ class PKN():
 
     
 if __name__ == "__main__":
-    sbml_file = "/home/user/lfit/pkn/aghamiri_et_al_2020_data/F2 - Executable_file_for_CaSQ_derived_MAPK_model.sbml"
+    sbml_file = "/home/user/lfit/pkn/toy_data/aghamiri_2020-Executable_file_for_CaSQ_derived_MAPK_model.sbml"
+    #sbml_file = "/home/user/lfit/pkn/toy_data/Selvaggio_2020-Microenvironment_control_of_hybrid_Epithelial_Mesenchymal_phenotypes.sbml"
+    
 
     model = PKN(sbml_file)
 
-    print(model.rules)
+    # print(model.rules)
