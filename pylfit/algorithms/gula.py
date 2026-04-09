@@ -40,7 +40,7 @@ class GULA (Algorithm):
     """
 
     @staticmethod
-    def fit(dataset, targets_to_learn=None, impossibility_mode=False, verbose=0, threads=1): #variables, values, transitions, conclusion_values=None, program=None): #, partial_heuristic=False):
+    def fit(dataset, targets_to_learn=None, background_rules=[], impossibility_mode=False, verbose=0, threads=1): #variables, values, transitions, conclusion_values=None, program=None): #, partial_heuristic=False):
         """
         Preprocess transitions and learn rules for all given features/targets variables/values.
 
@@ -82,10 +82,25 @@ class GULA (Algorithm):
                 for val in values:
                     if val not in dataset.targets[var_id][1]:
                         raise ValueError('targets_to_learn values must be in target variable domain')
+        
+        if len(background_rules) == 0:
+            background_heads = {}
+        else:
+            if not isinstance(background_rules, list):
+                raise ValueError("Background rules must be a list.")
+            elif not all(isinstance(i, Rule) for i in background_rules):
+                raise TypeError("Background rules must be of type pylfit.objects.Rule")
+            else:
+                background_heads = {rule.head.variable: {'domain': set(), 'rules':[]} for rule in background_rules}
+
+                for rule in background_rules:
+                    background_heads[rule.head.variable]['domain'].add(rule.head)
+                    background_heads[rule.head.variable]['rules'].append(rule)
 
         feature_domains = dataset.features
         features_void_atoms = dataset.features_void_atoms
-        rules = []
+        rules = background_rules
+
 
         if verbose > 0:
             eprint("\nConverting transitions to nparray...")
@@ -122,12 +137,21 @@ class GULA (Algorithm):
                 if val_name not in targets_to_learn[var_name]:
                     continue
 
+                covered_value = False
+                if var_name in background_heads:
+                    for atom in background_heads[var_name]['domain']:
+                        if val_name == atom.value:
+                            covered_value = True
+                
+                if covered_value:
+                    continue
+
                 head = LegacyAtom(var_name, set(var_domain), val_name, var_id)
 
                 if(threads == 1):
-                    rules += GULA.fit_thread([processed_transitions, features_void_atoms, head, [dataset._UNKNOWN_VALUE], dataset.has_unknown_values(), impossibility_mode, verbose])
+                    rules += GULA.fit_thread([processed_transitions, features_void_atoms, head, [dataset._UNKNOWN_VALUE], dataset.has_unknown_values(), impossibility_mode, background_heads, verbose])
                 else:
-                    thread_parameters.append([processed_transitions, features_void_atoms, head, [dataset._UNKNOWN_VALUE], dataset.has_unknown_values(), impossibility_mode, verbose])
+                    thread_parameters.append([processed_transitions, features_void_atoms, head, [dataset._UNKNOWN_VALUE], dataset.has_unknown_values(), impossibility_mode, background_heads, verbose])
 
         if(threads > 1):
             if(verbose):
@@ -143,7 +167,7 @@ class GULA (Algorithm):
         """
         Thread wrapper for fit_var/fit_var_val_with_unknown_values functions (see below)
         """
-        processed_transitions, features_void_atoms, head, unknown_values, has_unknown_values, impossibility_mode, verbose = args
+        processed_transitions, features_void_atoms, head, unknown_values, has_unknown_values, impossibility_mode, background_heads, verbose = args
         if verbose > 0:
             eprint("\nStart learning of ", head)
         
@@ -175,7 +199,7 @@ class GULA (Algorithm):
         #    rules = GULA.fit_var_val_with_unknown_values(head, features_void_atoms, negatives, positives, unknown_values, verbose)
         #else:
         #    rules = GULA.fit_var_val(head, features_void_atoms, negatives, verbose)
-        rules = GULA.fit_var_val(head, features_void_atoms, negatives, verbose)
+        rules = GULA.fit_var_val(head, features_void_atoms, negatives, background_heads, verbose)
 
         if verbose > 0:
             eprint("\nFinished learning of ", head)
@@ -214,7 +238,7 @@ class GULA (Algorithm):
 
 
     @staticmethod
-    def fit_var_val(head, features_void_atoms, negatives, verbose=0):
+    def fit_var_val(head, features_void_atoms, negatives, background_heads, verbose=0):
         """
         Learn minimal rules that explain positive examples while consistent with negatives examples
 
@@ -275,6 +299,13 @@ class GULA (Algorithm):
                         if minimal_rule.subsumes(candidate):
                             subsumed = True
                             break
+                    
+                    # Discard if subsumed by a background rule
+                    if head.variable in background_heads:
+                        for background_rule in background_heads[head.variable]['rules']:
+                            if background_rule.subsumes(candidate):
+                                subsumed = True
+                                break
 
                     if subsumed:
                         continue

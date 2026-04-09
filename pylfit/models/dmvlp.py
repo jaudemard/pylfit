@@ -129,7 +129,7 @@ class DMVLP(Model):
         verbose = 0
         heuristics = None
         threads = 1
-        prior = None
+        background_rules = None
 
         if options is not None:
             if "targets_to_learn" in options:
@@ -140,8 +140,8 @@ class DMVLP(Model):
                 heuristics = options["heuristics"]
             if "threads" in options:
                 threads = options["threads"]
-            if "prior" in options:
-                prior = options["prior"]
+            if "background_rules" in options:
+                background_rules = options["background_rules"]
             
         # Check parameters
         if not any(isinstance(dataset, i) for i in self._COMPATIBLE_DATASETS):
@@ -179,7 +179,7 @@ class DMVLP(Model):
                 raise ValueError(msg)
             if verbose > 0:
                 eprint("Starting fit with GULA")
-            self.rules = GULA.fit(dataset=dataset, targets_to_learn=targets_to_learn, verbose=verbose, threads=threads)
+            self.rules = GULA.fit(dataset=dataset, targets_to_learn=targets_to_learn, background_rules=background_rules, verbose=verbose, threads=threads)
         elif self.algorithm == "pride":
             if not isinstance(dataset, DiscreteStateTransitionsDataset):
                 raise ValueError(msg)
