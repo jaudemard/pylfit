@@ -29,9 +29,10 @@ class PKN():
         
         if dataset:
             self.dataset = dataset
-            self._dataset_features_names = [feature[0] for feature in self.dataset.features]
+            self._dataset_features = {var_name: {'domain': var_domain, 'state_position': var_id } for var_id, (var_name, var_domain) in enumerate(self.dataset.features)}
+            self._dataset_targets = {var_name: {'domain': var_domain, 'state_position': var_id } for var_id, (var_name, var_domain) in enumerate(self.dataset.targets)}
         
-        self.features = self._extract_features()
+        self.all_features = self._extract_features()
         self.rules = self._extract_rules()
 
         if dataset:
@@ -47,22 +48,21 @@ class PKN():
         features = {}
         
         for species in self.qual_model.getListOfQualitativeSpecies():
-            if dataset:
-                if species.getId() not in self._dataset_features_names:
-                    continue
-                else:
-                    # state_position = 
-                    raise NotImplementedError("Retrieving features is not implemented yet.")
-            else:
-                state_position = None
-
+            # if dataset:
+            #     if (species.getId() not in self._dataset_features) or (species.getId() not in self._dataset_targets):
+            #         continue
+            #     else:
+            #         # state_position = 
+            #         raise NotImplementedError("Retrieving features is not implemented yet.")
+            # else:
+            #     state_position = None
 
             domain = set([str(i) for i in range(0,species.getMaxLevel()+1)])
             # Create void atoms for each feature
             features[species.getId()] = pylfit.objects.LegacyAtom(species.getId(),
                                         domain,
                                         pylfit.objects.LegacyAtom._VOID_VALUE,
-                                        state_position)
+                                        None)
         
         return features
 
@@ -172,13 +172,14 @@ class PKN():
         :param condition: A dict with structure, {"variable": .. , "operator": .. , "value": .. }
         """
         var_name = condition['variable']
+
         operator = condition['operator']
         value = condition['value']
         
-        if var_name not in self.features:
+        if var_name not in self.all_features:
             return []
         
-        feature = self.features[var_name]
+        feature = self.all_features[var_name]
         domain_values = sorted([int(v) for v in feature.domain])
         
         # Determine valid values based on operator
@@ -225,7 +226,14 @@ class PKN():
             # Get the target variable, or head, of the rules
             list_of_targets = [output for output in transition.getListOfOutputs()]
             target_id = list_of_targets[0].getQualitativeSpecies()
-            target = self.features[target_id] # import the void atom for this feature
+                 
+            if self.dataset is not None:
+                if target_id not in self._dataset_targets:
+                    continue
+                else:
+                    target = self._dataset_targets[target_id]
+            else:  
+                target = self.all_features[target_id] # import the void atom for this feature
 
             # Get the default level of the head
             list_of_function_terms = transition.getListOfFunctionTerms()
@@ -237,7 +245,7 @@ class PKN():
                 head = pylfit.objects.LegacyAtom(target_id,
                         target.domain,
                         function_term.getResultLevel(),
-                        None)
+                        target.state_position)
 
                 math_expression = function_term.getMath()
 
@@ -264,8 +272,20 @@ class PKN():
                     variants = []
                     simple_condition = []
 
+                    not_in_background_knowledge = False
+
                     for cond in conditions_set:
                         atoms_in_cond = self._condition_to_lfit_body(cond)
+                        for atom in atoms_in_cond:
+                            if self.dataset is not None:
+                                if atom.variable not in self._dataset_features:
+                                    not_in_background_knowledge = True
+                                    break
+                        
+                        # If one of the atom is not in background knowledge, skip the rule
+                        if not_in_background_knowledge:
+                            break
+
                         # There's multiple values allowed for the rule
                         if len(atoms_in_cond) > 1:
                             variants.append(atoms_in_cond)

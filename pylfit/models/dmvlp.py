@@ -129,7 +129,7 @@ class DMVLP(Model):
         verbose = 0
         heuristics = None
         threads = 1
-        background_rules = None
+        background_rules = []
 
         if options is not None:
             if "targets_to_learn" in options:
