@@ -11,6 +11,7 @@ from ..models import Model
 from ..objects import LegacyAtom
 from ..objects import Rule
 from ..datasets import DiscreteStateTransitionsDataset
+from ..datasets import PKN
 from ..algorithms import GULA, PRIDE
 from ..semantics import Synchronous, Asynchronous, General
 
@@ -169,6 +170,49 @@ class DMVLP(Model):
 
         if self.algorithm not in DMVLP._ALGORITHMS:
             raise ValueError('algorithm property must be one element of DMVLP._COMPATIBLE_ALGORITHMS: '+str(DMVLP._ALGORITHMS)+'.')
+        
+        if len(background_rules) > 0:
+            background_rules, dataset = PKN.fit_dataset(background_rules, dataset)
+            inconsistent_rules = []
+            consistent_rules = []
+
+            if not isinstance(background_rules, list):
+                raise ValueError("Background rules must be a list.")
+            elif not all(isinstance(i, Rule) for i in background_rules):
+                raise TypeError("Background rules must be of type pylfit.objects.Rule")
+            
+            for rule in background_rules:
+                observed_state = False
+                head_not_in_target = False
+                head_always_in_target = False                
+
+                for transition in dataset.data:
+                    match = rule.partial_matches(transition[0], unknown_values = '?')
+                    if (match == 2):
+                        observed_state = True
+                        if rule.head.value == transition[1][rule.head.state_position]:
+                            if not head_not_in_target:
+                                head_always_in_target = True
+                        else:
+                            head_not_in_target = True
+                            if head_always_in_target:
+                                head_always_in_target = False
+
+                # Observed state but in negative exemple for said head
+                if observed_state and head_not_in_target:
+                    inconsistent_rules.append(rule) # besoin de revision.. ?
+                # The rule is consistent with all transition observed
+                elif head_always_in_target:
+                    consistent_rules.append(rule) # a priori elle est bonne mais p-e pas minimale
+                
+                elif not observed_state:
+                    # Add partial observation
+                    partial_s1 = numpy.full(len(dataset.features), LegacyAtom._UNKNOWN_VALUE)
+                    for var in rule.body:
+                        partial_s1[rule.body[var].state_position] = rule.body[var].value
+                    partial_S2 = numpy.full(len(dataset.targets), LegacyAtom._UNKNOWN_VALUE)
+                    partial_S2[rule.head.state_position] = rule.head.value
+                    dataset.data.append((partial_s1, partial_S2))
 
         msg = 'Dataset type (' + str(dataset.__class__.__name__) + ') not supported \
         by the algorithm (' + str(self.algorithm.__class__.__name__) + '). \
@@ -179,7 +223,7 @@ class DMVLP(Model):
                 raise ValueError(msg)
             if verbose > 0:
                 eprint("Starting fit with GULA")
-            self.rules = GULA.fit(dataset=dataset, targets_to_learn=targets_to_learn, background_rules=background_rules, verbose=verbose, threads=threads)
+            self.rules = GULA.fit(dataset=dataset, targets_to_learn=targets_to_learn, background_rules=consistent_rules, verbose=verbose, threads=threads)
         elif self.algorithm == "pride":
             if not isinstance(dataset, DiscreteStateTransitionsDataset):
                 raise ValueError(msg)

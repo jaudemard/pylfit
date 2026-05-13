@@ -1,3 +1,4 @@
 from .dataset import Dataset
 from .discreteStateTransitionsDataset import DiscreteStateTransitionsDataset
 from .continuousStateTransitionsDataset import ContinuousStateTransitionsDataset
+from .knowledge_network import PKN

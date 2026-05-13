@@ -112,31 +112,6 @@ class GULA (Algorithm):
             eprint("\nConverting transitions to nparray...")
         processed_transitions = np.array([np.concatenate( (s1, s2), axis=None) for s1,s2 in dataset.data])
 
-
-        # Add partial observations for background rules
-        for rule in background_rules:
-            observed_state = False
-            for transition in processed_transitions:
-                match = rule.partial_matches(transition[:len(feature_domains)], unknown_values = '?')
-
-                if (match == 2):
-                    observed_state = True
-                    break
-
-            if observed_state:
-                continue
-            
-            if not observed_state:
-                # Add partial observation
-                partial_s1 = np.full(len(feature_domains), LegacyAtom._UNKNOWN_VALUE)
-                for var in rule.body:
-                    partial_s1[rule.body[var].state_position] = rule.body[var].value
-                partial_S2 = np.full(len(dataset.targets), LegacyAtom._UNKNOWN_VALUE)
-                partial_S2[rule.head.state_position] = rule.head.value
-                partial_transition = np.concatenate((partial_s1, partial_S2))
-                processed_transitions = np.vstack([processed_transitions, partial_transition])
-
-
         if len(processed_transitions) > 0:
             if verbose > 0:
                 eprint("Sorting transitions...")
@@ -159,6 +134,20 @@ class GULA (Algorithm):
             # Last state
             processed_transitions_.append((s1,S2))
             processed_transitions = processed_transitions_
+
+        if len(background_rules) > 0:
+            if verbose > 0:
+                eprint("Converting background rule in negative examples...")
+            
+            negative_examples = {}
+            for rule in background_rules:
+                # Compute negative example
+                head_var = rule.head.variable
+                head_val = rule.head.value
+                # if head_var not in negative_examples:
+                #     negative_examples[head_var] = {head_val: }
+                # elif head_val not in negative_examples[head_var]:
+                #     negative_examples[]
 
 
         thread_parameters = []
@@ -200,8 +189,6 @@ class GULA (Algorithm):
         if impossibility_mode:
             positives, negatives = negatives.copy(), positives.copy()
 
-        # debug
-        print('\n\n', head, ':\n', positives, '\n\n')
 
         # Remove potential false negatives
         if has_unknown_values:

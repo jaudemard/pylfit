@@ -2,16 +2,18 @@
 
 Still in development and testing.
 """
+from ..objects.rule import Rule
+from ..objects.legacyAtom import LegacyAtom
+from ..datasets.discreteStateTransitionsDataset import DiscreteStateTransitionsDataset
 
-import libsbml
-import os
-import collections
-import pylfit
+
+# import libsbml
 import itertools
+import numpy
 from typing import Dict, List, Any
 
-class PKN():
-    def __init__(self, sbml_path, dataset=None):
+class PKN:
+    def __init__(self, rules = [], sbml_path=None, dataset=None):
         """
         Constructor of prior knowledge's rules based on a SBML-Qual model.
         
@@ -19,24 +21,114 @@ class PKN():
         :param dataset: a pylift.datasets.Dataset object to constraint 
         rules extraction and check domain definition coherence
         """
-        reader = libsbml.SBMLReader()
-        self.model = reader.readSBML(sbml_path).getModel()
-        self.qual_model = self.model.getPlugin("qual")
 
-        # Check Qual extension
-        if self.qual_model is None:
-            raise ValueError("Model has no SBML-Qual content.")
+        self.rules = rules
+
+        if sbml_path:
+            reader = libsbml.SBMLReader()
+            self.model = reader.readSBML(sbml_path).getModel()
+            self.qual_model = self.model.getPlugin("qual")
+
+            # Check Qual extension
+            if self.qual_model is None:
+                raise ValueError("Model has no SBML-Qual content.")
+            
+            self.all_features = self._extract_features()
+            self.rules = self._extract_rules()
         
         if dataset:
             self.dataset = dataset
-            self._dataset_features = {var_name: {'domain': var_domain, 'state_position': var_id } for var_id, (var_name, var_domain) in enumerate(self.dataset.features)}
+            self._dataset_features = dataset
             self._dataset_targets = {var_name: {'domain': var_domain, 'state_position': var_id } for var_id, (var_name, var_domain) in enumerate(self.dataset.targets)}
         
-        self.all_features = self._extract_features()
-        self.rules = self._extract_rules()
+    
 
         if dataset:
             raise NotImplementedError("Match to dataset features has yet to be implemented.")
+        
+
+#--------------
+# Constructors
+#--------------
+
+    @staticmethod
+    def from_string(rules_list):
+        """
+        Create the PKN rules from list of string.        
+        """
+        features = {}
+        targets = {}
+        _rules_list = []
+        for string_format in rules_list:
+            tokens = string_format.strip().split(":-")
+
+            if len(tokens[0]) > 0:
+                head = tokens[0].split('(')
+                if head[0] not in targets:
+                    targets[head[0]] = {head[1].strip(')')}
+                else:
+                    targets[head[0]].update(head[1].strip(')'))
+            
+            body_string = tokens[1].strip(".").split(',')
+            if len(body_string) > 0:
+                for var in body_string:
+                    condition = var.split("(")
+                    if condition[0] not in features:
+                        features[condition[0]] = {condition[1].strip(')')}
+                    else:
+                        features[condition[0]].update(condition[1].strip(')'))
+
+        features = [(var, list(values)) for var, values in features.items()]
+        targets = [(var, list(values)) for var, values in targets.items()]
+        
+        # Create the rules
+        return PKN(rules = [Rule.from_string(string_format, features, targets)])
+
+
+    @staticmethod
+    def fit_dataset(rules_list, dataset):
+        """
+        Fit the background rules to the dataset, and vice versa.
+        """
+        targets = {target[0]: target[1] for target in dataset.targets}
+        features = {feature[0]: feature[1] for feature in dataset.features}
+        new_atoms = {}
+        # Get the rules of interest in the PKN to not add useless rule
+        _rules_list = []
+        for rule in rules_list:
+            if rule.head.variable in targets:
+                _rules_list.append(rule)
+                if rule.head.value not in targets[rule.head.variable]:
+                    raise ValueError(f"For prior rule {rule.to_string()}\n{rule.head} value isn't found in the dataset variable domain.")
+                
+                # Identify unseen in data atoms
+                for var in rule.body:
+                    if (var not in features) and (var not in new_atoms):
+                        new_atoms[var] = rule.body[var].domain
+                    elif var in new_atoms:
+                        new_atoms[var].update(rule.body[var].value)
+                    
+        rules_list = _rules_list
+        new_atoms = [(var, list(values)) for var, values in new_atoms.items()]
+
+        if len(new_atoms) > 0:        
+            _data = []
+            _features = dataset.features + (new_atoms)
+            # Add unknown value in the transitions for the new atoms
+            appendice = numpy.full(len(new_atoms), LegacyAtom._UNKNOWN_VALUE)
+            for transition in dataset.data:
+                _data.append((numpy.append(transition[0], appendice), transition[1]))
+            # Create the adapted dataset
+            dataset = DiscreteStateTransitionsDataset(_data, _features, dataset.targets)
+
+        # Re-create rules so they match the dataset features and targets vectors
+        _rules_list = []
+        for rule in rules_list:
+            str_rule = rule.to_string()
+            new_rule = Rule.from_string(str_rule, dataset.features, dataset.targets)
+            _rules_list.append(new_rule)
+
+        return _rules_list, dataset
 
 
     def _extract_features(self, dataset=None):
@@ -319,13 +411,14 @@ class PKN():
         """
         return NotImplementedError('yet to be done')
 
+
     
 if __name__ == "__main__":
     sbml_file = "/home/user/lfit/pkn/toy_data/aghamiri_2020-Executable_file_for_CaSQ_derived_MAPK_model.sbml"
     #sbml_file = "/home/user/lfit/pkn/toy_data/Selvaggio_2020-Microenvironment_control_of_hybrid_Epithelial_Mesenchymal_phenotypes.sbml"
     
 
-    model = PKN(sbml_file)
+    model = PKN(sbml_path=sbml_file)
 
     print(model.rules)
 
