@@ -109,6 +109,15 @@ class PKN:
                         new_atoms[var].update(rule.body[var].value)
                     
         rules_list = _rules_list
+
+        # Assure a minimum of two values in every atoms domains
+        _new_atoms = {}
+        for atom, domain in new_atoms.items():
+            _new_atoms[atom] = domain
+            if len(domain) == 1:
+                _new_atoms[atom].update(f"not{domain[0]}")
+        new_atoms = _new_atoms
+
         new_atoms = [(var, list(values)) for var, values in new_atoms.items()]
 
         if len(new_atoms) > 0:        
@@ -151,9 +160,9 @@ class PKN:
 
             domain = set([str(i) for i in range(0,species.getMaxLevel()+1)])
             # Create void atoms for each feature
-            features[species.getId()] = pylfit.objects.LegacyAtom(species.getId(),
+            features[species.getId()] = LegacyAtom(species.getId(),
                                         domain,
-                                        pylfit.objects.LegacyAtom._VOID_VALUE,
+                                        LegacyAtom._VOID_VALUE,
                                         None)
         
         return features
@@ -293,7 +302,7 @@ class PKN:
         # Create an atom for each valid value
         atoms = []
         for val in valid_values:
-            atom = pylfit.objects.LegacyAtom(var_name, feature.domain, str(val), None)
+            atom = LegacyAtom(var_name, feature.domain, str(val), None)
             atoms.append(atom)
         
         return atoms
@@ -334,7 +343,7 @@ class PKN:
             # Extract rules
             for function_term in transition.getListOfFunctionTerms():
                 # Get the head of the rules
-                head = pylfit.objects.LegacyAtom(target_id,
+                head = LegacyAtom(target_id,
                         target.domain,
                         function_term.getResultLevel(),
                         target.state_position)
@@ -388,7 +397,7 @@ class PKN:
                     # Create a simple rule if it already respect lfit 
                     if len(variants) == 0:
                         body = {atom.variable: atom for atom in simple_condition}
-                        rules.append(pylfit.objects.Rule(head, body))
+                        rules.append(Rule(head, body))
                     
                     # Create a cartesian product of the variant if it doesn't
                     else:
@@ -400,7 +409,7 @@ class PKN:
                                     body = body | {atom.variable:atom for atom in el}
                                 else:
                                     body[el.variable] = el
-                            rules.append(pylfit.objects.Rule(head,body))
+                            rules.append(Rule(head,body))
         
         return rules
                         
