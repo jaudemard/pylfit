@@ -115,7 +115,7 @@ class PKN:
         for atom, domain in new_atoms.items():
             _new_atoms[atom] = domain
             if len(domain) == 1:
-                _new_atoms[atom].update(f"not{domain[0]}")
+                _new_atoms[atom].update(f"not{list(domain)[0]}")
         new_atoms = _new_atoms
 
         new_atoms = [(var, list(values)) for var, values in new_atoms.items()]
