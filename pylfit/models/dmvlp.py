@@ -174,7 +174,7 @@ class DMVLP(Model):
         if len(background_rules) > 0:
             background_rules, dataset = PKN.fit_dataset(background_rules, dataset)
             inconsistent_rules = []
-            consistent_rules = []
+            negatives_examples = {}
 
             if not isinstance(background_rules, list):
                 raise ValueError("Background rules must be a list.")
@@ -198,16 +198,29 @@ class DMVLP(Model):
                             if head_always_in_target:
                                 head_always_in_target = False
 
-                # Observed state but in negative exemple for said head
+                # The rule is not consistent with all transitions
                 if observed_state and head_not_in_target:
-                    inconsistent_rules.append(rule) # besoin de revision.. ?
-                # The rule is consistent with all transition observed
-                elif head_always_in_target:
-                    consistent_rules.append(rule) # a priori elle est bonne mais p-e pas minimale
-                
+                    inconsistent_rules.append(rule)
+
+                # The rule is consistent with all transitions
+                elif (head_always_in_target) and (self.algorithm == "gula"):
+                    partial_observation = numpy.full(len(dataset.features), LegacyAtom._UNKNOWN_VALUE)
+                    
+                    for var in rule.body:
+                        partial_observation[rule.body[var].state_position] = rule.body[var].value
+                    
+                    for value in rule.head.domain:
+                        if rule.head.value != value:
+                            _head = rule.head.copy()
+                            _head.value = value
+                            if _head not in negatives_examples:
+                                negatives_examples[_head] = []
+                            negatives_examples[_head].append(partial_observation)
+
+                # The conditions of the rules are never observed                 
                 elif not observed_state:
-                    # Add partial observation
                     partial_s1 = numpy.full(len(dataset.features), LegacyAtom._UNKNOWN_VALUE)
+                    
                     for var in rule.body:
                         partial_s1[rule.body[var].state_position] = rule.body[var].value
                     partial_S2 = numpy.full(len(dataset.targets), LegacyAtom._UNKNOWN_VALUE)
@@ -223,7 +236,7 @@ class DMVLP(Model):
                 raise ValueError(msg)
             if verbose > 0:
                 eprint("Starting fit with GULA")
-            self.rules = GULA.fit(dataset=dataset, targets_to_learn=targets_to_learn, background_rules=consistent_rules, verbose=verbose, threads=threads)
+            self.rules = GULA.fit(dataset=dataset, targets_to_learn=targets_to_learn, negatives_examples=negatives_examples, verbose=verbose, threads=threads)
         elif self.algorithm == "pride":
             if not isinstance(dataset, DiscreteStateTransitionsDataset):
                 raise ValueError(msg)
