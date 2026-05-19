@@ -40,7 +40,7 @@ class GULA (Algorithm):
     """
 
     @staticmethod
-    def fit(dataset, targets_to_learn=None, background_rules=[], impossibility_mode=False, verbose=0, threads=1): #variables, values, transitions, conclusion_values=None, program=None): #, partial_heuristic=False):
+    def fit(dataset, targets_to_learn=None, negatives_examples=None, impossibility_mode=False, verbose=0, threads=1): #variables, values, transitions, conclusion_values=None, program=None): #, partial_heuristic=False):
         """
         Preprocess transitions and learn rules for all given features/targets variables/values.
 
@@ -83,28 +83,17 @@ class GULA (Algorithm):
                     if val not in dataset.targets[var_id][1]:
                         raise ValueError('targets_to_learn values must be in target variable domain')
         
-        if len(background_rules) == 0:
-            ordered_rules = {}
-        else:
+        if negatives_examples:
             # Check types
-            if not isinstance(background_rules, list):
-                raise ValueError("Background rules must be a list.")
-            elif not all(isinstance(i, Rule) for i in background_rules):
-                raise TypeError("Background rules must be of type pylfit.objects.Rule")
-            # Order per heads
-            else:
-                ordered_rules = {}
-                for rule in background_rules:
-                    if rule.head.variable not in ordered_rules :
-                        ordered_rules[rule.head.variable] = {rule.head.value : [rule]}
-                    elif rule.head.value not in ordered_rules[rule.head.variable]: 
-                        ordered_rules[rule.head.variable][rule.head.value] = [rule]
-                    else:
-                        ordered_rules[rule.head.variable][rule.head.value].append(rule)
+            if not isinstance(negatives_examples, dict):
+                raise ValueError("Negatives examples must be a dict of type {pylfit.objects.LegacyAtom : set() of list}")
+            elif not all(isinstance(i, LegacyAtom) for i in negatives_examples.keys()):
+                raise TypeError("Negatives examples must be a dict of type {pylfit.objects.LegacyAtom : set() of list}")
+        else:
+            negatives_examples = {}
 
         feature_domains = dataset.features
         features_void_atoms = dataset.features_void_atoms
-        # rules = background_rules
         rules = []
 
 
@@ -135,20 +124,6 @@ class GULA (Algorithm):
             processed_transitions_.append((s1,S2))
             processed_transitions = processed_transitions_
 
-        if len(background_rules) > 0:
-            if verbose > 0:
-                eprint("Converting background rule in negative examples...")
-            
-            negative_examples = {}
-            for rule in background_rules:
-                # Compute negative example
-                head_var = rule.head.variable
-                head_val = rule.head.value
-                # if head_var not in negative_examples:
-                #     negative_examples[head_var] = {head_val: }
-                # elif head_val not in negative_examples[head_var]:
-                #     negative_examples[]
-
 
         thread_parameters = []
         for var_id, (var_name, var_domain) in enumerate(dataset.targets):
@@ -157,14 +132,19 @@ class GULA (Algorithm):
                     continue
                 if val_name not in targets_to_learn[var_name]:
                     continue
-                    
+
 
                 head = LegacyAtom(var_name, set(var_domain), val_name, var_id)
+
+                if head in negatives_examples:
+                    prior_negatives = negatives_examples[head]
+                else:
+                    prior_negatives = []
             
                 if(threads == 1):
-                    rules += GULA.fit_thread([processed_transitions, features_void_atoms, head, [dataset._UNKNOWN_VALUE], dataset.has_unknown_values(), impossibility_mode, verbose])
+                    rules += GULA.fit_thread([processed_transitions, features_void_atoms, head, [dataset._UNKNOWN_VALUE], dataset.has_unknown_values(), impossibility_mode, prior_negatives, verbose])
                 else:
-                    thread_parameters.append([processed_transitions, features_void_atoms, head, [dataset._UNKNOWN_VALUE], dataset.has_unknown_values(), impossibility_mode, verbose])
+                    thread_parameters.append([processed_transitions, features_void_atoms, head, [dataset._UNKNOWN_VALUE], dataset.has_unknown_values(), impossibility_mode, prior_negatives, verbose])
 
         if(threads > 1):
             if(verbose):
@@ -180,15 +160,19 @@ class GULA (Algorithm):
         """
         Thread wrapper for fit_var/fit_var_val_with_unknown_values functions (see below)
         """
-        processed_transitions, features_void_atoms, head, unknown_values, has_unknown_values, impossibility_mode, verbose = args
+        processed_transitions, features_void_atoms, head, unknown_values, has_unknown_values, impossibility_mode, prior_negatives, verbose = args
         if verbose > 0:
             eprint("\nStart learning of ", head)
         
         positives, negatives = GULA.interprete(processed_transitions, head)
+
+        # Insert prior negatives at the beginning
         
         if impossibility_mode:
             positives, negatives = negatives.copy(), positives.copy()
 
+        if len(prior_negatives) > 0:
+            negatives = prior_negatives + negatives
 
         # Remove potential false negatives
         if has_unknown_values:
