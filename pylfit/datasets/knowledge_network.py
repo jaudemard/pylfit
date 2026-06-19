@@ -51,15 +51,38 @@ class PKN:
 # Constructors
 #--------------
 
+
     @staticmethod
-    def from_string(rules_list):
+    def from_tabular(path, source_col='source', target_col='target', relation_col='relation', relation_sign={'+':'+','-':'-'}):
+        """
+        Create the prior knowledge rules from tabular data.
+
+        Args:
+            path: String
+            source_col: String or Int
+                The source nodes column index or name
+            target_col: String or Int
+                The target nodes column index or name
+            relation_col: String or Int
+                The relation (edges) column index or name
+            relation_sign: Dict of {String: String}
+        Returns:
+            PKN        
+        """
+        
+
+        # return PKN()
+
+
+    @staticmethod
+    def from_string(string_format_rules):
         """
         Create the PKN rules from list of string.        
         """
         features = {}
         targets = {}
-        _rules_list = []
-        for string_format in rules_list:
+
+        for string_format in string_format_rules:
             tokens = string_format.strip().split(":-")
 
             if len(tokens[0]) > 0:
@@ -80,13 +103,17 @@ class PKN:
 
         features = [(var, list(values)) for var, values in features.items()]
         targets = [(var, list(values)) for var, values in targets.items()]
+
+        rules_list = []
+        for string_format in string_format_rules:
+            rules_list += [Rule.from_string(string_format, features, targets)]
         
         # Create the rules
-        return PKN(rules = [Rule.from_string(string_format, features, targets)])
+        return PKN(rules = rules_list)
 
 
     @staticmethod
-    def fit_dataset(rules_list, dataset):
+    def fit_dataset(prior_rules_list, dataset):
         """
         Fit the background rules to the dataset, and vice versa.
         """
@@ -94,10 +121,10 @@ class PKN:
         features = {feature[0]: feature[1] for feature in dataset.features}
         new_atoms = {}
         # Get the rules of interest in the PKN to not add useless rule
-        _rules_list = []
-        for rule in rules_list:
+        prior_rules_list_fitted = []
+        for rule in prior_rules_list:
             if rule.head.variable in targets:
-                _rules_list.append(rule)
+                prior_rules_list_fitted.append(rule)
                 if rule.head.value not in targets[rule.head.variable]:
                     raise ValueError(f"For prior rule {rule.to_string()}\n{rule.head} value isn't found in the dataset variable domain.")
                 
@@ -108,19 +135,19 @@ class PKN:
                     elif var in new_atoms:
                         new_atoms[var].update(rule.body[var].value)
                     
-        rules_list = _rules_list
+        prior_rules_list = prior_rules_list_fitted
 
         # Assure a minimum of two values in every atoms domains
         _new_atoms = {}
         for atom, domain in new_atoms.items():
             _new_atoms[atom] = domain
             if len(domain) == 1:
-                _new_atoms[atom].update(f"not{list(domain)[0]}")
+                _new_atoms[atom].add(f"not_{list(domain)[0]}")
         new_atoms = _new_atoms
 
         new_atoms = [(var, list(values)) for var, values in new_atoms.items()]
 
-        if len(new_atoms) > 0:        
+        if len(new_atoms) > 0:
             _data = []
             _features = dataset.features + (new_atoms)
             # Add unknown value in the transitions for the new atoms
@@ -131,13 +158,13 @@ class PKN:
             dataset = DiscreteStateTransitionsDataset(_data, _features, dataset.targets)
 
         # Re-create rules so they match the dataset features and targets vectors
-        _rules_list = []
-        for rule in rules_list:
+        prior_rules_list_fitted = []
+        for rule in prior_rules_list:
             str_rule = rule.to_string()
             new_rule = Rule.from_string(str_rule, dataset.features, dataset.targets)
-            _rules_list.append(new_rule)
+            prior_rules_list_fitted.append(new_rule)
 
-        return _rules_list, dataset
+        return prior_rules_list_fitted, dataset
 
 
     def _extract_features(self, dataset=None):
