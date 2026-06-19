@@ -172,14 +172,18 @@ class DMVLP(Model):
             raise ValueError('algorithm property must be one element of DMVLP._COMPATIBLE_ALGORITHMS: '+str(DMVLP._ALGORITHMS)+'.')
         
         if len(background_rules) > 0:
-            background_rules, dataset = PKN.fit_dataset(background_rules, dataset)
-            inconsistent_rules = []
-            negatives_examples = {}
-
             if not isinstance(background_rules, list):
                 raise ValueError("Background rules must be a list.")
             elif not all(isinstance(i, Rule) for i in background_rules):
                 raise TypeError("Background rules must be of type pylfit.objects.Rule")
+
+            background_rules, dataset = PKN.fit_dataset(background_rules, dataset)
+
+            if verbose > 0:
+                eprint(f"Integrating {len(background_rules)} prior rules...")
+
+            inconsistent_rules = []
+            negatives_examples = {}
             
             for rule in background_rules:
                 observed_state = False
@@ -219,6 +223,7 @@ class DMVLP(Model):
 
                 # The conditions of the rules are never observed                 
                 elif not observed_state:
+                    eprint(f"Adding rule {rule} as a partial transition...")
                     partial_s1 = numpy.full(len(dataset.features), LegacyAtom._UNKNOWN_VALUE)
                     
                     for var in rule.body:
@@ -226,6 +231,8 @@ class DMVLP(Model):
                     partial_S2 = numpy.full(len(dataset.targets), LegacyAtom._UNKNOWN_VALUE)
                     partial_S2[rule.head.state_position] = rule.head.value
                     dataset.data.append((partial_s1, partial_S2))
+        else:
+            negatives_examples = {}
 
         msg = 'Dataset type (' + str(dataset.__class__.__name__) + ') not supported \
         by the algorithm (' + str(self.algorithm.__class__.__name__) + '). \
