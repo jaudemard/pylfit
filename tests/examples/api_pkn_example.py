@@ -2,32 +2,47 @@ import os
 import pylfit
 import random
 import datetime
+import numpy as np
 
 from pylfit.objects.legacyAtom import LegacyAtom
 from pylfit.datasets.knowledge_network import PKN
 from pylfit.datasets.discreteStateTransitionsDataset import DiscreteStateTransitionsDataset
 from pylfit.preprocessing import discrete_state_transitions_dataset_from_csv
+from pylfit.models.dmvlp import DMVLP
+from pylfit.models.wdmvlp import WDMVLP
+
 
 import logging
 logger = logging.getLogger(__name__)
 
-def compute_accuracy(targets_true, targets_pred):
+def compute_accuracy(true_target_states, pred_target_states):
     """Compute accuracy"""
     accurate_pred = 0
 
-    total_pred = len(targets_pred[0]) * len(targets_pred)
+    total_pred = len(pred_target_states[list(pred_target_states.keys())[0]]) * len(pred_target_states)
 
-    for feature_state in targets_true.keys():
-        for j, s in enumerate(targets_true[feature_state]):
-            if targets_pred[feature_state][j] == s:
+    for feature_state in true_target_states.keys():
+        
+        if len(true_target_states[feature_state].keys()) == 1:
+            true_target_state = list(true_target_states[feature_state].keys())[0]
+        else:
+            raise KeyError("Non-deterministic real target state.")
+        
+        for j, s in enumerate(true_target_state):
+            if str(pred_target_states[feature_state][j]) == str(s):
                 accurate_pred += 1
 
     return accurate_pred / total_pred
 
+# def generate_noise(data):
+
+
+
 if __name__ == "__main__":
     logging.basicConfig(filename='tests/tmp/pkn_examples.log',
     level=logging.INFO,
-    format='%(message)s'
+    format='%(message)s',
+    filemode='w'
     )
     separator ="\n"+"-"*32+"\n"
 
@@ -47,13 +62,27 @@ if __name__ == "__main__":
     all_observed_states = [transition[0] for transition in full_dataset.data]
 
 
-    dataset_sample_size = [0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.6,0.7,0.9]
-    partial_datasets = []
+    logging.info("\nSplit dataset into train, validation and tests (64%, 16%, and 20%)...")
+
+    ind = random.sample(range(0,len(full_dataset.data)),int(0.8*len(full_dataset.data)))
+    _data = [full_dataset.data[i] for i in ind]
+    
+    train_ind = random.sample(ind,int(0.8*len(_data)))
+
+    train_set = DiscreteStateTransitionsDataset([full_dataset.data[i] for i in train_ind], full_dataset.features, full_dataset.targets)
+    validation_set = DiscreteStateTransitionsDataset([full_dataset.data[i] for i in ind if i not in train_ind], full_dataset.features, full_dataset.targets)
+
+    _data = [full_dataset.data[i] for i in range(0, len(full_dataset.data)) if i not in ind]
+    test_set = [transition[0] for transition in _data]
 
     logging.info("\nGenerating partial datasets...")
+
+    dataset_sample_size = [0.02,0.05,0.06,0.1]
+    partial_datasets = []
+
     for sample_size in dataset_sample_size:
-        random_index = random.sample(range(0,len(full_dataset.data)),int(sample_size*len(full_dataset.data)))
-        _data = [full_dataset.data[i] for i in random_index]
+        ind = random.sample(range(0,len(train_set.data)),int(sample_size*len(train_set.data)))
+        _data = [train_set.data[i] for i in ind]
 
         partial_datasets.append(DiscreteStateTransitionsDataset(_data, full_dataset.features, full_dataset.targets))
 
@@ -62,7 +91,7 @@ if __name__ == "__main__":
     # ----------------------------------------
     logging.info(f"{separator}Normal run with GULA on reference dataset{separator}")
     
-    model = pylfit.models.DMVLP(features=full_dataset.features, targets=full_dataset.targets)
+    model = DMVLP(features=full_dataset.features, targets=full_dataset.targets)
     model.compile(algorithm="gula")
     
     logging.info("\tlaunching learning on all observations from the reference...")
@@ -72,7 +101,7 @@ if __name__ == "__main__":
 
 
     logging.info("\tlaunching prediction on the reference program...")
-    targets_true = model.predict([all_observed_states[0]])
+    targets_true = model.predict(test_set)
 
 
     # ----------------------------------------
@@ -80,28 +109,41 @@ if __name__ == "__main__":
     # Expanging generality of the final model by covering unobserved states with prior knowledge
     # ----------------------------------------
     logging.info(f"{separator}Test 1")
-    logging.info(f"Expanding generalisability of the program by covering unobserved states with prior knowledge{separator}")    
+    logging.info(f"Expanding generalisability of the program by covering unobserved states with prior knowledge{separator}")   
+    
+     
 
-    rules_percentages = [0.1,0.2,0.3,0.5,1]
+    # rules_percentages = [0.1,0.2,0.3,0.5,1]
 
-    partial_prior_knowledge = []
-    for percentage in rules_percentages:
-        index = random.sample(range(0,len(reference_rules)),int(percentage*len(reference_rules)))
-        partial_prior_knowledge.append([reference_rules[i] for i in index])
+    # partial_prior_knowledge = []
+    # for percentage in rules_percentages:
+    #     index = random.sample(range(0,len(reference_rules)),int(percentage*len(reference_rules)))
+    #     partial_prior_knowledge.append([reference_rules[i] for i in index])
 
     logging.info("\tlaunching learning on partial datasets, as control values...")
 
     test_1_control_accuracy = []
     for i, partial_dataset in enumerate(partial_datasets):
-        logging.info(f"\tcontrol {i+1}, {dataset_sample_size[i]}% of the observations")
-        model = pylfit.models.DMVLP(features=partial_dataset.features, targets=partial_dataset.targets)
+
+        logging.info(f"\tcontrol {i+1}, {dataset_sample_size[i]*100}% ({len(partial_dataset.data)})")
+        model = WDMVLP(features=partial_dataset.features, targets=partial_dataset.targets)
         model.compile(algorithm="gula")
         model.fit(partial_dataset)
-        
-        pred = model.predict(all_observed_states)
+        pred = model.predict(test_set)
 
-        accuracy = compute_accuracy(targets_true, pred)
+        predicted_targets = {}
+        for feature_state in pred.keys():
+            predictions = pred[feature_state]
+            max_score_targets = []
+            for target in targets:
+                values = list(predictions[target].keys())
+                score = [predictions[target][value][0] for value in values]
+                max_score_targets.append(values[score.index(max(score))])
+            predicted_targets[feature_state] = max_score_targets
 
-        print(accuracy)
+        # print("TRUE: ", targets_true)
+        # print("PRED: ", predicted_targets)
 
-        break
+        accuracy = compute_accuracy(targets_true, predicted_targets)
+
+        logging.info(f"\tAccuracy: {accuracy}")
