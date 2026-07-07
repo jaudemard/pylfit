@@ -117,6 +117,7 @@ class PKN:
         """
         Fit the background rules to the dataset, and vice versa.
         """
+        dataset = dataset.copy()
         targets = {target[0]: target[1] for target in dataset.targets}
         features = {feature[0]: feature[1] for feature in dataset.features}
         new_atoms = {}
