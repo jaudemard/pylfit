@@ -3,6 +3,7 @@ import pylfit
 import random
 import datetime
 import numpy as np
+import sys
 
 from pylfit.objects.legacyAtom import LegacyAtom
 from pylfit.datasets.knowledge_network import PKN
@@ -34,7 +35,47 @@ def compute_accuracy(true_target_states, pred_target_states):
 
     return accurate_pred / total_pred
 
-# def generate_noise(data):
+
+def add_noise(dataset, noise=0.30):
+    """Add noise to a dataset
+
+    Add noise in the boolean transitions of a dataset by flipping its value (0->1, 1->0)
+
+    """
+
+    dataset = dataset.copy()
+
+    noise_f_ind = random.sample(range(0,len(dataset.data)),round(noise*len(dataset.data)))
+    noise_t_ind = random.sample(range(0,len(dataset.data)),round(noise*len(dataset.data)))
+
+    _data = []
+
+    for tr_ind, transition in enumerate(dataset.data):
+
+        if tr_ind in noise_f_ind:
+            q = int(abs(random.normalvariate(0,1)//1+1))
+            if q > len(transition[0]):
+                q = len(transition[0])
+            index_f = random.sample(range(0,len(transition[0])),q)
+
+            for ind_f in index_f:
+                domain = dataset.features[ind_f][1].copy()
+                domain.remove(str(transition[0][ind_f]))
+                transition[0][ind_f] = random.sample(domain,1)[0]
+      
+        if tr_ind in noise_t_ind:
+            q = int(abs(random.normalvariate(0,1)//1+1))
+            if q > len(transition[1]):
+                q = len(transition[1])
+            index_t = random.sample(range(0,len(transition[1])),q)
+
+            for ind_t in index_t:
+                domain = dataset.features[ind_t][1].copy()
+                domain.remove(str(transition[1][ind_t]))
+                transition[1][ind_t] = random.sample(domain,1)[0]
+        _data.append(transition)
+
+    return DiscreteStateTransitionsDataset(_data, dataset.features, dataset.targets)
 
 
 
@@ -46,12 +87,18 @@ if __name__ == "__main__":
     )
     separator ="\n"+"-"*32+"\n"
 
-    random.seed(64)
+    # random.seed(32)
     dataset_path = './tests/datasets/mammalian.csv'
 
     logging.info(f"Start: {datetime.datetime.now()}")
     logging.info(f"Reference dataset: {dataset_path}")
-    logging.info(f"seed: 64")
+    logging.info(f"seed: 32")
+
+
+    background_rules = ['CycA_t(1) :- Cdc20_t_1(0), Cdh1_t_1(0), CycA_t_1(1), Rb_t_1(0).','CycA_t(1) :- Cdc20_t_1(0), E2F_t_1(1), Rb_t_1(0), UbcH10_t_1(0).','CycA_t(0) :- Cdh1_t_1(1), UbcH10_t_1(1).','CycA_t(0) :- CycA_t_1(0), E2F_t_1(0).','CycA_t(1) :- Cdc20_t_1(0), CycA_t_1(1), Rb_t_1(0), UbcH10_t_1(0).']
+
+    background_rules = [pylfit.objects.Rule.from_string(rule, full_dataset.features, full_dataset.targets) for rule in background_rules]
+
 
     with open(dataset_path,"r") as data_file:
         header = data_file.readline().strip().split(',')
@@ -62,23 +109,35 @@ if __name__ == "__main__":
     full_dataset = discrete_state_transitions_dataset_from_csv(dataset_path, feature_names=features, target_names=targets)
     all_observed_states = [transition[0] for transition in full_dataset.data]
 
+    noisy_dataset = add_noise(full_dataset)
 
     logging.info("\nSplit dataset into train, validation and tests (64%, 16%, and 20%)...")
 
+    # ind = random.sample(range(0,len(full_dataset.data)),int(0.8*len(full_dataset.data)))
+    # _data = [full_dataset.data[i] for i in ind]
+    
+    # train_ind = random.sample(ind,len(_data))
+
+    # train_set = DiscreteStateTransitionsDataset([full_dataset.data[i] for i in train_ind], full_dataset.features, full_dataset.targets)
+    # # validation_set = DiscreteStateTransitionsDataset([full_dataset.data[i] for i in ind if i not in train_ind], full_dataset.features, full_dataset.targets)
+
+    # _data = [full_dataset.data[i] for i in range(0, len(full_dataset.data)) if i not in ind]
+    # test_set = [transition[0] for transition in _data]
+
     ind = random.sample(range(0,len(full_dataset.data)),int(0.8*len(full_dataset.data)))
-    _data = [full_dataset.data[i] for i in ind]
+    _data = [noisy_dataset.data[i] for i in ind]
     
     train_ind = random.sample(ind,len(_data))
 
-    train_set = DiscreteStateTransitionsDataset([full_dataset.data[i] for i in train_ind], full_dataset.features, full_dataset.targets)
+    train_set = DiscreteStateTransitionsDataset([noisy_dataset.data[i] for i in train_ind], noisy_dataset.features, noisy_dataset.targets)
     # validation_set = DiscreteStateTransitionsDataset([full_dataset.data[i] for i in ind if i not in train_ind], full_dataset.features, full_dataset.targets)
 
-    _data = [full_dataset.data[i] for i in range(0, len(full_dataset.data)) if i not in ind]
+    _data = [noisy_dataset.data[i] for i in range(0, len(noisy_dataset.data)) if i not in ind]
     test_set = [transition[0] for transition in _data]
 
     logging.info("\nGenerating partial datasets...")
 
-    dataset_sample_size = [0.01,0.02,0.05,0.1,0.20]
+    dataset_sample_size = [0.01,0.02,0.05,0.1,0.25,0.50,0.75,1]
     partial_datasets = []
 
     for sample_size in dataset_sample_size:
@@ -86,6 +145,9 @@ if __name__ == "__main__":
         _data = [train_set.data[i] for i in ind]
 
         partial_datasets.append(DiscreteStateTransitionsDataset(_data, full_dataset.features, full_dataset.targets))
+
+
+
 
     # ----------------------------------------
     # Normal Run
@@ -105,6 +167,8 @@ if __name__ == "__main__":
     targets_true = model.predict(test_set)
 
 
+
+
     # ----------------------------------------
     # Test 1
     # Expanding generality of the final model by covering unobserved states with prior knowledge
@@ -113,12 +177,6 @@ if __name__ == "__main__":
     logging.info(f"Expanding generalisability of the program by covering unobserved states with prior knowledge{separator}")
 
 
-    # rules_percentages = [0.1,0.2,0.3,0.5,1]
-
-    # partial_prior_knowledge = []
-    # for percentage in rules_percentages:
-    #     index = random.sample(range(0,len(reference_rules)),int(percentage*len(reference_rules)))
-    #     partial_prior_knowledge.append([reference_rules[i] for i in index])
 
     # ----------------------------------------
     # Control Run
@@ -128,7 +186,7 @@ if __name__ == "__main__":
     test_1_control_accuracy = []
     for i, partial_dataset in enumerate(partial_datasets):
 
-        logging.info(f"\tcontrol {i+1}, {dataset_sample_size[i]*100}% ({len(partial_dataset.data)})")
+        logging.info(f"\tcontrol {i+1}, {dataset_sample_size[i]*100*0.8}% ({len(partial_dataset.data)})")
         model = WDMVLP(features=partial_dataset.features, targets=partial_dataset.targets)
         model.compile(algorithm="gula")
         model.fit(partial_dataset)
@@ -144,17 +202,24 @@ if __name__ == "__main__":
                 max_score_targets.append(values[score.index(max(score))])
             predicted_targets[feature_state] = max_score_targets
 
-        # print("TRUE: ", targets_true)
-        # print("PRED: ", predicted_targets)
+        model_rules = [rule[1] for rule in model.rules]
+        for rule in background_rules:
+            logging.info(f"{rule.to_string()}")
 
         accuracy = compute_accuracy(targets_true, predicted_targets)
 
-        logging.info(f"\tAccuracy: {accuracy}")
+        logging.info(f"\tAccuracy: {accuracy:.3f}")
+
+
+    # sys.exit()
+
+
 
 
     # ----------------------------------------
     # PKN Run
 
+    logging.info(f"{separator}")
     logging.info("\tlaunching PKN integration...")
 
 
@@ -165,7 +230,7 @@ if __name__ == "__main__":
         logging.info(f"\tcontrol {i+1}, {dataset_sample_size[i]*100}% ({len(partial_dataset.data)})")
         model = WDMVLP(features=partial_dataset.features, targets=partial_dataset.targets)
         model.compile(algorithm="gula")
-        model.fit(partial_dataset)
+        model.fit(partial_dataset, background_rules=background_rules)
         pred = model.predict(test_set)
 
         predicted_targets = {}
@@ -181,6 +246,11 @@ if __name__ == "__main__":
         # print("TRUE: ", targets_true)
         # print("PRED: ", predicted_targets)
 
+        model_rules = [rule[1] for rule in model.rules]
+        for rule in background_rules:
+            logging.info(f"{rule.to_string()}")
+
+
         accuracy = compute_accuracy(targets_true, predicted_targets)
 
-        logging.info(f"\tAccuracy: {accuracy}")
+        logging.info(f"\tAccuracy: {accuracy:.3f}")
