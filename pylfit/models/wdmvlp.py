@@ -9,8 +9,8 @@
 from . import DMVLP
 
 from ..utils import eprint
-from ..objects import LegacyAtom
-from ..datasets import DiscreteStateTransitionsDataset
+from ..objects import LegacyAtom, Rule
+from ..datasets import DiscreteStateTransitionsDataset, PKN
 from ..algorithms import GULA
 from ..algorithms import PRIDE
 from ..algorithms import BruteForce
@@ -103,7 +103,7 @@ class WDMVLP(DMVLP):
         else:
             raise NotImplementedError('<DEV> algorithm="'+str(algorithm)+'" is in DMVLP._COMPATIBLE_ALGORITHMS but no behavior implemented.')
 
-    def fit(self, dataset, verbose=0, heuristics=None, threads=1):
+    def fit(self, dataset, verbose=0, heuristics=None, threads=1, background_rules = []):
         """
         Use the algorithm set by compile() to fit the rules to the dataset.
             - Learn a model from scratch using the chosen algorithm.
@@ -124,13 +124,77 @@ class WDMVLP(DMVLP):
         by the algorithm (' + str(self.algorithm.__class__.__name__) + '). \
         Dataset must be of type ' + str(DiscreteStateTransitionsDataset.__class__.__name__)
 
+
+        if len(background_rules) > 0:
+            if not isinstance(background_rules, list):
+                raise ValueError("Background rules must be a list.")
+            elif not all(isinstance(i, Rule) for i in background_rules):
+                raise TypeError("Background rules must be of type pylfit.objects.Rule")
+
+            background_rules, dataset = PKN.fit_dataset(background_rules, dataset)
+
+            if verbose > 0:
+                eprint(f"Integrating {len(background_rules)} prior rules...")
+
+            inconsistent_rules = []
+            negatives_examples = {}
+            
+            for rule in background_rules:
+                observed_state = False
+                head_not_in_target = False
+                head_always_in_target = False                
+
+                for transition in dataset.data:
+                    match = rule.partial_matches(transition[0], unknown_values = '?')
+                    if (match == 2):
+                        observed_state = True
+                        if rule.head.value == transition[1][rule.head.state_position]:
+                            if not head_not_in_target:
+                                head_always_in_target = True
+                        else:
+                            head_not_in_target = True
+                            if head_always_in_target:
+                                head_always_in_target = False
+
+                # The rule is not consistent with all transitions
+                if observed_state and head_not_in_target:
+                    inconsistent_rules.append(rule)
+
+                # The rule is consistent with all transitions
+                elif (head_always_in_target) and (self.algorithm == "gula"):
+                    partial_observation = numpy.full(len(dataset.features), LegacyAtom._UNKNOWN_VALUE)
+                    
+                    for var in rule.body:
+                        partial_observation[rule.body[var].state_position] = rule.body[var].value
+                    
+                    for value in rule.head.domain:
+                        if rule.head.value != value:
+                            _head = rule.head.copy()
+                            _head.value = value
+                            if _head not in negatives_examples:
+                                negatives_examples[_head] = []
+                            negatives_examples[_head].append(partial_observation)
+
+                # The conditions of the rules are never observed                 
+                elif not observed_state:
+                    eprint(f"Adding rule {rule} as a partial transition...")
+                    partial_s1 = numpy.full(len(dataset.features), LegacyAtom._UNKNOWN_VALUE)
+                    
+                    for var in rule.body:
+                        partial_s1[rule.body[var].state_position] = rule.body[var].value
+                    partial_S2 = numpy.full(len(dataset.targets), LegacyAtom._UNKNOWN_VALUE)
+                    partial_S2[rule.head.state_position] = rule.head.value
+                    dataset.data.append((partial_s1, partial_S2))
+        else:
+            negatives_examples = {}
+
         if self.algorithm == "gula":
             if not isinstance(dataset, DiscreteStateTransitionsDataset):
                 raise ValueError(msg)
             if verbose > 0:
                 eprint("Starting fit with GULA")
                 eprint("Learning possibilities...")
-            rules = GULA.fit(dataset=dataset, verbose=verbose, threads=threads)
+            rules = GULA.fit(dataset=dataset, verbose=verbose, threads=threads, negatives_examples=negatives_examples)
 
             if verbose > 0:
                 eprint("Learning impossibilities...")
