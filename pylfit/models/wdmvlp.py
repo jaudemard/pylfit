@@ -180,11 +180,39 @@ class WDMVLP(DMVLP):
                     eprint(f"Adding rule {rule} as a partial transition...")
                     partial_s1 = numpy.full(len(dataset.features), LegacyAtom._UNKNOWN_VALUE)
                     
+                    partial_s1 = []
+                    partial_s2 = []
+
+                    part_body = numpy.full(len(dataset.features), LegacyAtom._UNKNOWN_VALUE)
                     for var in rule.body:
-                        partial_s1[rule.body[var].state_position] = rule.body[var].value
-                    partial_S2 = numpy.full(len(dataset.targets), LegacyAtom._UNKNOWN_VALUE)
-                    partial_S2[rule.head.state_position] = rule.head.value
-                    dataset.data.append((partial_s1, partial_S2))
+                        part_body[rule.body[var].state_position] = rule.body[var].value
+                    
+                    partial_s1.append(part_body)
+
+                    part_head = numpy.full(len(dataset.targets), LegacyAtom._UNKNOWN_VALUE)
+                    part_head[rule.head.state_position] = rule.head.value
+
+                    partial_s2.append
+
+                    if len(rule.head.domain) == 2:
+
+                        head_domain = rule.head.domain.copy()
+
+                        for var in rule.body:
+                            if len(rule.body[var].domain) == 2:
+                                domain = list(rule.body[var].domain.copy())
+                                domain.remove(rule.body[var].value)
+
+                                _part_body = part_body.copy()
+                                _part_body[rule.body[var].state_position] = domain[0]
+
+                                partial_s1.append(part_body)
+                                partial_s2
+                        
+
+                    partial_s2 = numpy.full(len(dataset.targets), LegacyAtom._UNKNOWN_VALUE)
+                    partial_s2[rule.head.state_position] = rule.head.value
+                    dataset.data.append((partial_s1, partial_s2))
         else:
             negatives_examples = {}
 
