@@ -12,6 +12,7 @@ from pylfit.datasets.discreteStateTransitionsDataset import DiscreteStateTransit
 from pylfit.preprocessing import discrete_state_transitions_dataset_from_csv
 from pylfit.models.dmvlp import DMVLP
 from pylfit.models.wdmvlp import WDMVLP
+from pylfit.algorithms.gula import GULA
 
 
 import logging
@@ -40,7 +41,7 @@ def compute_accuracy(true_target_states, pred_target_states):
 def add_noise(dataset, noise=0.10):
     """Add noise to a dataset
 
-    Add noise in the boolean transitions of a dataset by flipping its value (0->1, 1->0)
+    Add noise in the transitions of a dataset by randomly flipping its value.
 
     """
 
@@ -79,6 +80,41 @@ def add_noise(dataset, noise=0.10):
     return DiscreteStateTransitionsDataset(_data, dataset.features, dataset.targets)
 
 
+# Postprocessing
+def matching_error_composite(rule, dataset):
+    """"Compute the average difference between the atoms of a rule body and negative examples.
+
+    The composite matching error is equal to the average difference between atoms of a 
+    
+    From S. Buchet et al (2021)
+    
+    """
+    _, negatives = GULA.interprete(dataset.data, rule.head)
+
+    matching_error = 0
+    for neg in negatives:
+        error = 0
+        for var in rule.body:
+            if neg[rule.body[var].state_position] == rule.body[var].value:
+                error += 1
+        matching_error.append(error/len(rule.body))
+    return np.mean(matching_error)
+
+# Postprocessing
+def matching_error_total(rule, dataset):
+    """Compute the matching error between the body and negatives examples
+    """
+    _, negatives = GULA.interprete(dataset.data, rule.head)
+
+    matching_error = 0
+
+    for neg in negatives:
+        if rule.matches(neg) > 0:
+            matching_error += 1
+
+    return matching_error / len(negatives)
+
+
 
 if __name__ == "__main__":
     logging.basicConfig(filename='tests/tmp/pkn_examples.log',
@@ -114,10 +150,8 @@ if __name__ == "__main__":
     targets = ['CycA_t']
 
     full_dataset = discrete_state_transitions_dataset_from_csv(dataset_path, feature_names=features, target_names=targets)
-    all_observed_states = [transition[0] for transition in full_dataset.data]
 
     noisy_dataset = add_noise(full_dataset, noise = noise)
-
 
     background_rules = [pylfit.objects.Rule.from_string(rule, full_dataset.features, full_dataset.targets) for rule in background_rules]
     to_find = [pylfit.objects.Rule.from_string(rule, full_dataset.features, full_dataset.targets) for rule in to_find]
@@ -146,12 +180,10 @@ if __name__ == "__main__":
 
         partial_datasets.append(DiscreteStateTransitionsDataset(_data, full_dataset.features, full_dataset.targets))
 
-
-
-
     # ----------------------------------------
     # Normal Run
     # ----------------------------------------
+
     logging.info(f"{separator}Normal run with GULA on reference dataset{separator}")
     
     model = DMVLP(features=full_dataset.features, targets=full_dataset.targets)
@@ -265,14 +297,12 @@ if __name__ == "__main__":
             for rule in identified_rules:
                 logging.info(f"\t{rule.to_string()}")
 
-
         accuracy = compute_accuracy(targets_true, predicted_targets)
         test_1_accuracy.append(accuracy)
 
         models_info_test1.append({"accuracy": accuracy, "input_size":dataset_sample_size[i]*100*0.8, "rules":len(model.rules), "type":"test 1"})
 
         logging.info(f"\n\tAccuracy: {accuracy:.3f}\n")
-
 
 
 # ----------------------------------------

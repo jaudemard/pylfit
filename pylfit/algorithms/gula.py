@@ -193,10 +193,6 @@ class GULA (Algorithm):
 
             negatives = certain_negatives
 
-        #if has_unknown_values:
-        #    rules = GULA.fit_var_val_with_unknown_values(head, features_void_atoms, negatives, positives, unknown_values, verbose)
-        #else:
-        #    rules = GULA.fit_var_val(head, features_void_atoms, negatives, verbose)
         rules = GULA.fit_var_val(head, features_void_atoms, negatives, verbose)
 
         if verbose > 0:
