@@ -5,3 +5,4 @@ from .pride import PRIDE
 from .synchronizer import Synchronizer
 from .probalizer import Probalizer
 from .acedia import ACEDIA
+from .pkdo import PKDO
