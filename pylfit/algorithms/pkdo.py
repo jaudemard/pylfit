@@ -111,9 +111,7 @@ class PKDO (Algorithm):
 
                 candidates = []  # (rule, (optimistic_accuracy, complexity))
                 for rule in unique_frontier:
-                    accuracy = PKDO._compute_accuracy(rule, positives, negatives)
-
-                    print(rule, accuracy)
+                    accuracy = PKDO._accuracy(rule, positives, negatives)
 
                     if accuracy >= accuracy_threshold:
                         if verbose:
@@ -121,17 +119,12 @@ class PKDO (Algorithm):
                         final_rules.add(rule)
                         continue
 
-                    # Is there a maximum accuracy [TODO]
-                    # opt_acc = PKDO._optimistic_accuracy(rule, positives, negatives)
-                    # print(opt_acc)
-                    # sys.exit()
-                    # if opt_acc < accuracy_threshold:
-                    #     if verbose:
-                    #         eprint(f"Pruned, unreachable (optimistic={opt_acc:.3f} "
-                    #             f"< {accuracy_threshold}): {rule}")
-                    #     continue
+                    # Is there a maximum accuracy reached ? [TODO]
+                    opt_acc = PKDO._optimistic_accuracy(rule, positives, negatives)
+                    if opt_acc <= accuracy_threshold:
+                        continue
 
-                    candidates.append((rule,(accuracy,len(rule.body))))
+                    candidates.append((rule,(opt_acc,len(rule.body))))
 
                 # test to see if there is duplicates in the candidates [TODO]
 
@@ -184,7 +177,7 @@ class PKDO (Algorithm):
         # e : accuracy ?
         # c : rule complexity
         # d : distance to prior ?
-        e = PKDO._compute_accuracy(rule,negatives,positives)
+        e = PKDO._accuracy(rule,negatives,positives)
         c = len(rule.body)
         # d = PKDO._compute_distance_to_prior(rule,prior_knowledge)
         return (e,c)
@@ -223,7 +216,7 @@ class PKDO (Algorithm):
 
 
     @staticmethod
-    def _compute_accuracy(
+    def _accuracy(
         rule: Rule,
         positives: List[Tuple[str]],
         negatives: List[Tuple[str]]
@@ -253,4 +246,21 @@ class PKDO (Algorithm):
             if rule.matches(pos):
                 tp += 1
                 
-        return tn+tp / (len(negatives)+len(positives))
+        return (tn+tp) / (len(negatives)+len(positives))
+
+    @staticmethod
+    def _optimistic_accuracy(rule: Rule,
+        positives: List[Tuple[str]],
+        negatives: List[Tuple[str]]
+        ) -> float:
+        """Compute the accuracy upper-bound
+        
+        In an only specialization context, the accuracy upper bound
+        is given by $(length(negatives)+TP)/total)$.
+        """
+        tp = 0
+        for pos in positives:
+            if rule.matches(pos):
+                tp += 1
+
+        return (tp+len(negatives))/(len(negatives)+len(positives))
