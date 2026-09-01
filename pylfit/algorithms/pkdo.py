@@ -99,32 +99,40 @@ class PKDO (Algorithm):
                 # dedupe this round's frontier against everything seen so far + check for domination [TODO]
 
                 unique_frontier = []
-                for rule in frontier:
-                    key = PKDO._rule_key(rule)
+                for candidate in frontier:
+
+                    for f_rule in final_rules:
+                        subsumed = False
+                        if f_rule.subsumes(candidate):
+                            subsumed = True
+                    if subsumed:
+                        continue
+
+                    key = PKDO._rule_key(candidate)
                     if key in seen:
                         continue
                     seen.add(key)
-                    unique_frontier.append(rule)
+                    unique_frontier.append(candidate)
 
                 if not unique_frontier:
                     break
 
                 candidates = []  # (rule, (optimistic_accuracy, complexity))
-                for rule in unique_frontier:
-                    accuracy = PKDO._accuracy(rule, positives, negatives)
+                for candidate in unique_frontier:
+                    accuracy = PKDO._accuracy(candidate, positives, negatives)
 
                     if accuracy >= accuracy_threshold:
                         if verbose:
-                            eprint(f"Accepted (accuracy={accuracy:.3f}): {rule}")
-                        final_rules.add(rule)
+                            eprint(f"Accepted (accuracy={accuracy:.3f}): {candidate}")
+                        final_rules.add(candidate)
                         continue
 
                     # Is there a maximum accuracy reached ? [TODO]
-                    opt_acc = PKDO._optimistic_accuracy(rule, positives, negatives)
+                    opt_acc = PKDO._optimistic_accuracy(candidate, positives, negatives)
                     if opt_acc <= accuracy_threshold:
                         continue
 
-                    candidates.append((rule,(opt_acc,len(rule.body))))
+                    candidates.append((candidate,(opt_acc,len(candidate.body))))
 
                 # test to see if there is duplicates in the candidates [TODO]
 
@@ -141,8 +149,8 @@ class PKDO (Algorithm):
                         f"{len(new_candidates)} by dominance")
 
                 next_frontier = []
-                for rule in new_candidates:
-                    next_frontier.extend(PKDO._least_specialization(rule, dataset))
+                for candidate in new_candidates:
+                    next_frontier.extend(PKDO._least_specialization(candidate, dataset))
                 frontier = next_frontier
 
         return final_rules
