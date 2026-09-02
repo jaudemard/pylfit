@@ -101,18 +101,17 @@ class PKDO (Algorithm):
                 unique_frontier = []
                 for candidate in frontier:
 
-                    for f_rule in final_rules:
-                        subsumed = False
-                        if f_rule.subsumes(candidate):
-                            subsumed = True
-                    if subsumed:
-                        continue
-
+                    # Avoid re-exploring branch
                     key = PKDO._rule_key(candidate)
                     if key in seen:
                         continue
                     seen.add(key)
                     unique_frontier.append(candidate)
+
+                    # Ensure final rules minimality
+                    subsumed = any(f_rule.subsumes(candidate) for f_rule in final_rules)
+                    if subsumed:
+                        continue
 
                 if not unique_frontier:
                     break
@@ -132,7 +131,10 @@ class PKDO (Algorithm):
                     if opt_acc <= accuracy_threshold:
                         continue
 
-                    candidates.append((candidate,(opt_acc,len(candidate.body))))
+
+                    support = PKDO._support(candidate, positives)
+
+                    candidates.append((candidate,(opt_acc,support)))
 
                 # test to see if there is duplicates in the candidates [TODO]
 
@@ -158,9 +160,9 @@ class PKDO (Algorithm):
     @staticmethod
     def _dominates(score_a: Tuple[float, int], score_b: Tuple[float, int]) -> bool:
         """True if score_a Pareto-dominates score_b"""
-        acc_a, cx_a = score_a
-        acc_b, cx_b = score_b
-        a_dominate = acc_a >= acc_b and cx_a <= cx_b
+        acc_a, sp_a = score_a
+        acc_b, sp_b = score_b
+        a_dominate = (acc_a >= acc_b) and (sp_a >= sp_b)
         return a_dominate
 
     @staticmethod
@@ -272,3 +274,14 @@ class PKDO (Algorithm):
                 tp += 1
 
         return (tp+len(negatives))/(len(negatives)+len(positives))
+
+    @staticmethod
+    def _support(rule, positives)->int:
+        support = 0
+
+        for pos in positives:
+            if rule.matches(pos):
+                support += 1
+
+        return support
+    
