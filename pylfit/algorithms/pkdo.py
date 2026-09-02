@@ -129,6 +129,7 @@ class PKDO (Algorithm):
                     # Is there a maximum accuracy reached ? [TODO]
                     opt_acc = PKDO._optimistic_accuracy(candidate, positives, negatives)
                     if opt_acc <= accuracy_threshold:
+                        print("missed ! ", candidate, opt_acc, accuracy)
                         continue
 
 
@@ -144,7 +145,12 @@ class PKDO (Algorithm):
 
                 new_candidates = PKDO._pareto_front(candidates)
 
-                print("surviving_rules", new_candidates)
+                if verbose:
+                    print("Surviving rules:")
+                    for candidate in new_candidates:
+                        print(f"{candidate[0]}\n",
+                              f"accuracy: {candidate[1][0]}",
+                              f"support: {candidate[1][1]}")
 
                 if verbose and len(new_candidates) < len(candidates):
                     eprint(f"Frontier reduced {len(candidates)} -> "
@@ -152,10 +158,19 @@ class PKDO (Algorithm):
 
                 next_frontier = []
                 for candidate in new_candidates:
-                    next_frontier.extend(PKDO._least_specialization(candidate, dataset))
+                    next_frontier.extend(PKDO._least_specialization(candidate[0], dataset))
                 frontier = next_frontier
 
-        return final_rules
+            minimal_final_rules = []
+            for rule in final_rules:
+                if any(f_rule.subsumes(rule) for f_rule in final_rules):
+                    continue
+                elif len(final_rules) == 1:
+                    return final_rules
+                else:
+                    minimal_final_rules.append(rule)
+
+        return minimal_final_rules
 
     @staticmethod
     def _dominates(score_a: Tuple[float, int], score_b: Tuple[float, int]) -> bool:
@@ -171,6 +186,9 @@ class PKDO (Algorithm):
         ) -> List[Rule]:
         """Keeps only the non-dominated rules from a list of (rule, score)."""
         front = []
+        if len(scored_rules) == 1:
+            return scored_rules
+
         for rule, score in scored_rules:
             dominated = any(
                 PKDO._dominates(other_score, score)
@@ -178,7 +196,7 @@ class PKDO (Algorithm):
                 if other_rule is not rule
             )
             if not dominated:
-                front.append(rule)
+                front.append((rule, score))
         return front
 
 
