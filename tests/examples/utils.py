@@ -43,3 +43,18 @@ def add_noise(dataset, noise=0.10):
         _data.append(transition)
 
     return DiscreteStateTransitionsDataset(_data, dataset.features, dataset.targets)
+
+def subset_dataset(
+        dataset: DiscreteStateTransitionsDataset,
+        split:float = 0.5,
+        seed:int = None
+        ) -> DiscreteStateTransitionsDataset:
+    """Select a subset of a pylfit dataset observations"""
+    if seed:
+        random.seed(seed)
+
+    ind = random.sample(range(0,len(dataset.data)), int(split*len(dataset.data)))
+
+    subset_data = [dataset.data[i] for i in ind]
+
+    return DiscreteStateTransitionsDataset(subset_data, dataset.features, dataset.targets)
