@@ -3,7 +3,7 @@ from pylfit.preprocessing.tabular_dataset import discrete_state_transitions_data
 from pylfit.algorithms import PKDO
 from pylfit.objects import Rule
 
-from utils import add_noise
+from utils import add_noise, subset_dataset
 
 import pandas as pd
 import random
@@ -14,11 +14,13 @@ import sys
 
 NOISE = 0.1
 
-ACCURACY_THRESHOLD = 0.95
+ACCURACY_THRESHOLD = 0.90
 
 OBSERVATION_COVERAGE = 1.00
 
-BACKGROUND_RULES = ["Rb_t(1) :- ."]
+BACKGROUND_RULES = ["Rb_t(1) :- CycE_t_1(0)."]
+
+SUBSETS_SPLITS = []
 
 # Dataset Load 
 # ---------------------------------------------------------
@@ -31,8 +33,11 @@ targets = [t for t in header if t not in features]
 
 dataset = discrete_state_transitions_dataset_from_csv(path="tests/datasets/mammalian.csv", feature_names=features, target_names=targets)
 
+# Splitted dataset
+subset_data = subset_dataset(dataset, 0.8)
+
 # Add noise
-noisy_dataset = add_noise(dataset, NOISE)
+noisy_dataset = add_noise(subset_data, NOISE)
 
 # Background knowledge rules
 # ---------------------------------------------------------
@@ -46,16 +51,6 @@ learned_rules = PKDO.fit(noisy_dataset, background_rules, ACCURACY_THRESHOLD, ve
 
 # Summary
 # ---------------------------------------------------------
-print("\n\n---------Summary----------")
-if len(learned_rules) <=1:
-    r = "rule"
-else:
-    r = "rules"
-print(f"{len(learned_rules)} {r} found:")
-
-for rule in learned_rules:
-    print("\t", rule)
-
 real_rules = []
 with open("tests/tmp/mammalian_rules.txt","r") as real_rule_file:
     for r_rule in real_rule_file.readlines():
@@ -67,13 +62,22 @@ with open("tests/tmp/mammalian_rules.txt","r") as real_rule_file:
         if found:
             real_rules.append(r_rule)
 
-
 real_rules_accuracy = []
 for rule in real_rules:
     positives, negatives = PKDO.interprete(noisy_dataset, rule.head)
     real_rules_accuracy.append(PKDO._accuracy(rule, positives, negatives))
 
+# for r
+
+print("\n\n---------Summary----------")
+if len(learned_rules) <=1:
+    r = "rule"
+else:
+    r = "rules"
+print(f"{len(learned_rules)} {r} found.")
+
 summary = pd.DataFrame({"rule": real_rules, "score": real_rules_accuracy})
+summary.to_csv("tests/tmp/summary.csv")
 
 with open("tests/tmp/learned_rules.txt", "w+") as learned_file:
     for rule in learned_rules:
